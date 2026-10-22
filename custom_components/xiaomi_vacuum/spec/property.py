@@ -20,6 +20,8 @@ class Property(StrEnum):
     ROOM_INFORMATION = "room_information"
     LAST_CLEAN_TIME = "last_clean_time"
     MAP_OBJ_NAME = "map_obj_name"
+    TRAJECTORY_OBJ_NAME = "trajectory_obj_name"
+    VACUUM_POSITION = "vacuum_position"
     SWEEP_ROUTE = "sweep_route"
     OBSTACLE_AVOIDANCE_STRATEGY = "obstacle_avoidance_strategy"
     BATTERY_LEVEL = "battery_level"

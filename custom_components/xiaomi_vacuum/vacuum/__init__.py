@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 __all__ = ["XiaomiVacuum"]
 
 SERVICE_CLEAN_ZONE = "clean_zone"
+SERVICE_CLEAN_ROOMS = "clean_rooms"
 
 _ZONE_CORNERS = vol.ExactSequence([vol.Coerce(int)] * 4)
 
@@ -34,6 +35,27 @@ CLEAN_ZONE_SCHEMA = cv.make_entity_service_schema(
             cv.ensure_list, vol.Length(min=1), [vol.All(list, _ZONE_CORNERS, list)]
         ),
         vol.Optional("repeats"): vol.All(vol.Coerce(int), vol.Range(min=1)),
+    }
+)
+
+_ROOM_SCHEMA = vol.Schema(
+    {
+        vol.Required("id"): vol.Coerce(str),
+        vol.Optional("fan_level"): vol.In(
+            ["silent", "basic", "strong", "full_speed"]
+        ),
+        vol.Optional("water_level"): vol.In(
+            ["off", "level_1", "level_2", "level_3"]
+        ),
+        vol.Optional("clean_times"): vol.In(["one_time", "two_times"]),
+    }
+)
+
+CLEAN_ROOMS_SCHEMA = cv.make_entity_service_schema(
+    {
+        vol.Required("rooms"): vol.All(
+            cv.ensure_list, vol.Length(min=1), [_ROOM_SCHEMA]
+        ),
     }
 )
 
@@ -58,6 +80,9 @@ async def async_setup_entry(
     platform = entity_platform.async_get_current_platform()
     platform.async_register_entity_service(
         SERVICE_CLEAN_ZONE, CLEAN_ZONE_SCHEMA, "async_clean_zone"
+    )
+    platform.async_register_entity_service(
+        SERVICE_CLEAN_ROOMS, CLEAN_ROOMS_SCHEMA, "async_clean_rooms"
     )
     platform.async_register_entity_service(
         SERVICE_START_CUSTOM_CLEANING,

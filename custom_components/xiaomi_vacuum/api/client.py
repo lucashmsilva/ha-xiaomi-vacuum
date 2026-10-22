@@ -14,11 +14,6 @@ from xiaomi_vacuum_sdk import (
     PropertyValue,
 )
 
-from ..cloud.errors import (  # noqa: TID252
-    XiaomiCloudAuthError,
-    XiaomiCloudConnectionError,
-    XiaomiCloudError,
-)
 from ..const import LOGGER  # noqa: TID252
 from ..spec import Property  # noqa: TID252
 from .custom_cleaning import CustomCleaning
@@ -30,7 +25,6 @@ from .errors import (
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Sequence
 
-    from ..cloud import XiaomiCloud  # noqa: TID252
     from ..data import (  # noqa: TID252
         DeviceInfoLike,
         JsonObject,
@@ -67,15 +61,6 @@ class XiaomiVacuumApiClient:
             for name, address in spec.property_mapping.items()
         }
         self._property_requests = _group_property_requests(self._properties)
-        # Cloud client, set by the integration after the cloud session resolves.
-        # When present, multi-step flows that local UDP mishandles (e.g. the S20+
-        # room-clean) are routed through the cloud for reliability — matching
-        # what the Mi Home app does.
-        self._cloud: XiaomiCloud | None = None
-
-    def set_cloud(self, cloud: XiaomiCloud | None) -> None:
-        """Attach (or detach) the Xiaomi cloud client for cloud-routed actions."""
-        self._cloud = cloud
 
     async def _run[T](self, operation: Awaitable[T]) -> T:
         """Await one SDK call, normalizing errors to the integration types."""
@@ -247,6 +232,62 @@ class XiaomiVacuumApiClient:
                 "information. Configure rooms in the Mi Home app first."
             )
             raise XiaomiVacuumApiClientError(msg)
+        await self._async_start_config_room_clean(config)
+
+    async def async_clean_rooms(
+        self,
+        rooms: Sequence[dict[str, JsonValue]],
+        room_information: str | None = None,
+    ) -> None:
+        """
+        Start a room clean with per-room fan/water/repeat overrides.
+
+        Like :meth:`async_clean_segments`, but each entry may also carry
+        ``fan_level``, ``water_level`` and ``clean_times`` values (already
+        mapped to the device's raw integers). The requested order is the
+        cleaning order. Only fields present in an entry are overridden; every
+        other per-room setting is preserved from ``room_information``.
+        """
+        actions = self._spec.actions
+        if actions.set_room_clean_configs is None or actions.start_custom_sweep is None:
+            msg = "This model does not support per-room cleaning settings"
+            raise XiaomiVacuumApiClientError(msg)
+        wanted_order = [str(room["id"]) for room in rooms]
+        overrides = {
+            str(room["id"]): {
+                key: value
+                for key, value in room.items()
+                if key in _ROOM_OVERRIDE_KEYS and value is not None
+            }
+            for room in rooms
+        }
+        config = _build_room_clean_config(
+            room_information, wanted_order, overrides=overrides
+        )
+        if not config:
+            msg = (
+                "Cannot start room clean: the device published no room "
+                "information. Configure rooms in the Mi Home app first."
+            )
+            raise XiaomiVacuumApiClientError(msg)
+        selected = {str(room.get("id")) for room in config if room.get("on")}
+        missing = [room_id for room_id in wanted_order if room_id not in selected]
+        if missing:
+            msg = f"Unknown room id(s): {', '.join(missing)}"
+            raise XiaomiVacuumApiClientError(msg)
+        await self._async_start_config_room_clean(config)
+
+    async def _async_start_config_room_clean(
+        self, config: list[JsonObject]
+    ) -> None:
+        """Push the S20+ room config and start the saved custom sweep."""
+        actions = self._spec.actions
+        if actions.set_room_clean_configs is None or actions.start_custom_sweep is None:
+            msg = (
+                "config_then_custom room-clean strategy requires both "
+                "set_room_clean_configs and start_custom_sweep actions"
+            )
+            raise XiaomiVacuumApiClientError(msg)
         set_action = actions.set_room_clean_configs
         config_payload = [json.dumps({"room_attrs": config})]
         LOGGER.debug(
@@ -256,8 +297,8 @@ class XiaomiVacuumApiClient:
             len(config),
             sum(1 for r in config if r.get("on")),
         )
-        await self._call_action_cloud_or_local(
-            set_action["siid"], set_action["aiid"], config_payload
+        await self._run_action(
+            self._client.call_action(_address(set_action), config_payload)
         )
         start_action = actions.start_custom_sweep
         LOGGER.debug(
@@ -265,9 +306,7 @@ class XiaomiVacuumApiClient:
             start_action["siid"],
             start_action["aiid"],
         )
-        await self._call_action_cloud_or_local(
-            start_action["siid"], start_action["aiid"], []
-        )
+        await self._run_action(self._client.call_action(_address(start_action), []))
 
     async def async_clean_zones(
         self, zones: Sequence[CleaningZone], repeats: int | None = None
@@ -315,68 +354,6 @@ class XiaomiVacuumApiClient:
         LOGGER.debug("Calling start-user-define-sweep with payload: %s", payload)
         await self._run_action(self._client.call_action(_address(action), payload))
 
-    async def _call_action_cloud_or_local(
-        self, siid: int, aiid: int, params: list[str]
-    ) -> None:
-        """
-        Invoke a MIoT action, preferring the cloud when a session is available.
-
-        The cloud path (reliable TCP) is used for actions that local UDP
-        mishandles on flaky Wi-Fi — multi-step flows like the S20+ room-clean,
-        where a single ``-9999`` on the first step would otherwise leave the
-        second step running uselessly. When no cloud session is configured we
-        fall back to the local path (with its ack-timeout tolerance).
-        """
-        if self._cloud is not None:
-            try:
-                result = await self._cloud.async_call_action(siid, aiid, params)
-            except (XiaomiCloudAuthError, XiaomiCloudConnectionError) as exc:
-                # Neither an unreachable cloud nor a rejected session may fail
-                # the command — the device may still be reachable over the LAN,
-                # so fall back to the local transport just like the
-                # session-absent case. An expired session is re-prompted at the
-                # next entry setup; here it must not break room cleaning.
-                LOGGER.warning(
-                    "Cloud transport failed for action %s/%s; using local: %s",
-                    siid,
-                    aiid,
-                    exc,
-                )
-                result = None
-            except XiaomiCloudError as exc:
-                msg = f"Cloud action {siid}/{aiid} failed: {exc}"
-                raise XiaomiVacuumApiClientError(msg) from exc
-            # ``async_call_action`` returns ``None`` when the cloud client has no
-            # active session or no resolved device — i.e. the cloud transport is
-            # unavailable, not that the action succeeded. Treating that as success
-            # would let a room clean silently no-op while the optimistic UI has
-            # already reported it started. Fall through to the local path so the
-            # command still gets a chance to reach the device, mirroring the
-            # session-absent branch below.
-            if result is None:
-                LOGGER.debug(
-                    "Cloud transport unavailable for action %s/%s; using local",
-                    siid,
-                    aiid,
-                )
-            else:
-                LOGGER.debug("Cloud action %s/%s response: %s", siid, aiid, result)
-                if isinstance(result.get("code"), int):
-                    code = result["code"]
-                    if code != 0:
-                        msg = (
-                            f"Cloud action {siid}/{aiid} rejected by device: "
-                            f"code={code} message={result.get('message')!r}"
-                        )
-                        raise XiaomiVacuumApiClientError(msg)
-                return
-        await self._run_action(
-            self._client.call_action(
-                ActionAddress(siid=siid, aiid=aiid), cast("list[JsonValue]", params)
-            )
-        )
-
-
 def _address(action: MiotActionAddress) -> ActionAddress:
     """Convert a spec action mapping entry to the SDK's address type."""
     return ActionAddress(siid=action["siid"], aiid=action["aiid"])
@@ -410,9 +387,16 @@ _ROOM_ATTR_HEADERS = (
     "on",
 )
 
+# Per-room fields a caller may override when starting a room clean.
+_ROOM_OVERRIDE_KEYS = frozenset(
+    {"fan_level", "water_level", "clean_mode", "clean_times", "mop_mode"}
+)
+
 
 def _build_room_clean_config(
-    room_information: str | None, segment_ids: list[str]
+    room_information: str | None,
+    segment_ids: list[str],
+    overrides: dict[str, dict[str, JsonValue]] | None = None,
 ) -> list[JsonObject]:
     """
     Build the S20+ ``set-room-clean-configs`` payload.
@@ -429,6 +413,10 @@ def _build_room_clean_config(
     caller asked for), followed by the unselected ones in their original
     relative order. A ``clean_area`` call with ``[kitchen, living_room]`` thus
     cleans kitchen before living_room.
+
+    ``overrides`` maps room id → per-room fields to replace on selected rooms
+    (``fan_level``, ``water_level``, ``clean_mode``, ``clean_times``,
+    ``mop_mode``). Unselected rooms keep the values published by the device.
     """
     if not room_information:
         return []
@@ -460,6 +448,8 @@ def _build_room_clean_config(
             continue
         room_id_str = str(room_id)
         room["on"] = room_id_str in wanted
+        if room["on"] and overrides and room_id_str in overrides:
+            room.update(overrides[room_id_str])
         if room["on"]:
             selected.append(room)
         else:

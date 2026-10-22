@@ -15,7 +15,7 @@ from homeassistant.components.vacuum.const import (
 )
 from homeassistant.exceptions import ServiceValidationError
 
-from ..api import CleaningZone  # noqa: TID252
+from ..api import CleaningZone, XiaomiVacuumApiClientError  # noqa: TID252
 from ..const import DOMAIN, LOGGER  # noqa: TID252
 from ..entity import XiaomiVacuumEntity  # noqa: TID252
 from .start_custom_cleaning import async_update_custom_cleaning_options
@@ -223,6 +223,38 @@ class XiaomiVacuum(XiaomiVacuumEntity, StateVacuumEntity):
             segment_ids,
             room_information=self.coordinator.data.get("room_information"),
         )
+        self._patch_state(status=self.spec.status_code_for(VacuumActivity.CLEANING))
+        self._schedule_refresh()
+
+    async def async_clean_rooms(self, rooms: list[dict[str, str]]) -> None:
+        """Clean rooms in order, with optional per-room settings."""
+        if self.spec.room_clean_strategy != "config_then_custom":
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="room_settings_unsupported",
+                translation_placeholders={"model": self.spec.name},
+            )
+        normalized: list[dict[str, str | int]] = []
+        for room in rooms:
+            entry: dict[str, str | int] = {"id": str(room["id"])}
+            if (fan_level := room.get("fan_level")) is not None:
+                entry["fan_level"] = self.spec.fan_speeds[fan_level]
+            if (water_level := room.get("water_level")) is not None:
+                entry["water_level"] = self.spec.mop_water_levels[water_level]
+            if (clean_times := room.get("clean_times")) is not None:
+                entry["clean_times"] = self.spec.clean_times[clean_times]
+            normalized.append(entry)
+        try:
+            await self._client.async_clean_rooms(
+                normalized,
+                room_information=self.coordinator.data.get("room_information"),
+            )
+        except XiaomiVacuumApiClientError as exception:
+            raise ServiceValidationError(
+                translation_domain=DOMAIN,
+                translation_key="room_clean_failed",
+                translation_placeholders={"error": str(exception)},
+            ) from exception
         self._patch_state(status=self.spec.status_code_for(VacuumActivity.CLEANING))
         self._schedule_refresh()
 

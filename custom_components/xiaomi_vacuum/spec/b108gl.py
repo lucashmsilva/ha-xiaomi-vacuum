@@ -51,6 +51,10 @@ _PROPERTY_MAPPING: dict[Property, MiotPropertyAddress] = {
     # room-info is published by the vacuum-extend service on the S20+.
     Property.ROOM_INFORMATION: {"siid": 6, "piid": 10},
     Property.MAP_OBJ_NAME: {"siid": 7, "piid": 1},
+    # Cloud object holding the last/current cleaning path.
+    Property.TRAJECTORY_OBJ_NAME: {"siid": 7, "piid": 2},
+    # Live robot position as {"position": [x, y, yaw]} in map millimetres.
+    Property.VACUUM_POSITION: {"siid": 7, "piid": 4},
     Property.BATTERY_LEVEL: {"siid": 3, "piid": 1},
     Property.CHARGING_STATE: {"siid": 3, "piid": 2},
     # Consumables: life-level is piid 2 on the S20+ (piid 1 is left-time).

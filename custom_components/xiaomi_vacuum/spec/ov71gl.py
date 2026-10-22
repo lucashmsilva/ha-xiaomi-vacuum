@@ -57,6 +57,10 @@ _PROPERTY_MAPPING: dict[Property, MiotPropertyAddress] = {
     Property.ROOM_INFORMATION: {"siid": 2, "piid": 16},
     Property.LAST_CLEAN_TIME: {"siid": 2, "piid": 17},
     Property.MAP_OBJ_NAME: {"siid": 10, "piid": 1},
+    # Cloud object holding the last/current cleaning path.
+    Property.TRAJECTORY_OBJ_NAME: {"siid": 10, "piid": 2},
+    # Live robot position as {"position": [x, y, yaw]} in map millimetres.
+    Property.VACUUM_POSITION: {"siid": 10, "piid": 4},
     Property.SWEEP_ROUTE: {"siid": 2, "piid": 74},
     Property.OBSTACLE_AVOIDANCE_STRATEGY: {"siid": 2, "piid": 75},
     Property.BATTERY_LEVEL: {"siid": 3, "piid": 1},

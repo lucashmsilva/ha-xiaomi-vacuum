@@ -91,5 +91,9 @@ async def async_get_config_entry_diagnostics(
         "device": device,
         "coordinator_state": coordinator_state,
         "coordinator_last_update_success": coordinator.last_update_success,
-        "has_cloud_session": runtime.map_coordinator is not None,
+        "has_cloud_session": (
+            runtime.map_coordinator.has_cloud
+            if runtime.map_coordinator is not None
+            else False
+        ),
     }

@@ -234,6 +234,12 @@
         },
         "custom_cleaning_not_found": {
             "message": "No custom cleaning named {name}. Available: {available}."
+        },
+        "room_settings_unsupported": {
+            "message": "Per-room cleaning settings are not supported on the {model}."
+        },
+        "room_clean_failed": {
+            "message": "Could not start room cleaning: {error}"
         }
     },
     "services": {
@@ -258,6 +264,16 @@
                 "name": {
                     "name": "Name",
                     "description": "Name of the custom cleaning as shown in the Mi Home app. Case is ignored."
+                }
+            }
+        },
+        "clean_rooms": {
+            "name": "Clean rooms",
+            "description": "Cleans specific rooms in the given order, optionally overriding the fan speed, water level and number of passes per room.",
+            "fields": {
+                "rooms": {
+                    "name": "Rooms",
+                    "description": "Ordered list of rooms. Each item needs an id (from the vacuum's room list) and may set fan_level (silent, basic, strong, full_speed), water_level (off, level_1, level_2, level_3) and clean_times (one_time, two_times). Omitted settings keep the values stored on the vacuum."
                 }
             }
         }

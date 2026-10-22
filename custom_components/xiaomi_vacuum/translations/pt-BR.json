@@ -234,6 +234,12 @@
         },
         "custom_cleaning_not_found": {
             "message": "Nenhuma limpeza personalizada chamada {name}. Disponíveis: {available}."
+        },
+        "room_settings_unsupported": {
+            "message": "Configurações por cômodo não são suportadas no {model}."
+        },
+        "room_clean_failed": {
+            "message": "Não foi possível iniciar a limpeza por cômodo: {error}"
         }
     },
     "services": {
@@ -258,6 +264,16 @@
                 "name": {
                     "name": "Nome",
                     "description": "Nome da limpeza personalizada como aparece no app Mi Home. Maiúsculas e minúsculas são ignoradas."
+                }
+            }
+        },
+        "clean_rooms": {
+            "name": "Limpar cômodos",
+            "description": "Limpa cômodos específicos na ordem informada, com opção de definir potência, nível de água e número de passadas por cômodo.",
+            "fields": {
+                "rooms": {
+                    "name": "Cômodos",
+                    "description": "Lista ordenada de cômodos. Cada item precisa de um id (da lista de cômodos do aspirador) e pode definir fan_level (silent, basic, strong, full_speed), water_level (off, level_1, level_2, level_3) e clean_times (one_time, two_times). Configurações omitidas mantêm os valores gravados no aspirador."
                 }
             }
         }

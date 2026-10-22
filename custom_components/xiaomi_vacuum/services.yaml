@@ -29,3 +29,17 @@ start_custom_cleaning:
         select:
           options: []
           custom_value: true
+
+clean_rooms:
+  target:
+    entity:
+      integration: xiaomi_vacuum
+      domain: vacuum
+  fields:
+    rooms:
+      required: true
+      example: >-
+        [{"id": "6", "fan_level": "full_speed", "water_level": "level_3"},
+        {"id": "4", "fan_level": "strong", "water_level": "level_2"}]
+      selector:
+        object:
